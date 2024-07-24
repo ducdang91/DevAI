@@ -5,7 +5,7 @@ import sys
 
 class JavaParser:
     def __init__(self):
-        self.not_found_methods = []
+        self.not_found_messages = []
         self.current_method_multi_line_params = None
         self.log_flag = True
         self.classes = {}
@@ -23,7 +23,7 @@ class JavaParser:
     def parse_directory(self, directory_path):
         for root, _, files in os.walk(directory_path):
             for file_name in files:
-                if file_name.endswith('.java'): # and file_name in ('AdminSessionBean.java', 'MachineAction.java'):
+                if file_name.endswith('.java'):# and file_name in ('MailAction.java', 'ProductTravellerSession.java', 'AdminSessionBean.java'):
                     file_path = os.path.join(root, file_name)
                     self.parse_file(file_path)
 
@@ -47,12 +47,13 @@ class JavaParser:
     def parse_line(self, line):
         if line == '\n':
             return
-        # if 'SetTimeAsNoon' in line:
-        #     print('hello')
+        # if 'MailAction ma = new MailAction();' in line:
+        #     print(f'Check {line}')
 
         class_match = re.search(r'(class|interface)\s+(\w+)', line)
         field_match = re.search(
             r'(?:private|public|protected)\s+(?:static\s+)?(?:final\s+)?(\w+)\s+(\w+)(?:\s*=\s*.+)?;', line)
+        constructor_match = re.search(r'(\w+)\s+(\w+)\s*=\s*new', line)
         # method_match = re.search(r'(private|public|protected)\s+(?:static\s+)?(\w+(?:<.*>)?)\s+(\w+)\s*\((.*)', line)
         method_match = re.search(
             r'(private|public|protected)\s+(?:static\s+)?([\w\\.]+(?:<.*>)?)\s+(\w+)\s*\(([^)]*)\s*',
@@ -69,6 +70,8 @@ class JavaParser:
             self.handle_class_or_interface(class_match)
         elif field_match:
             self.handle_field(field_match)
+        elif constructor_match:
+            self.handle_field(constructor_match)
         elif method_match:
             self.handle_method_begin(method_match, line)
         elif is_interface_method and i_method_match:
@@ -84,7 +87,7 @@ class JavaParser:
     def handle_class_or_interface(self, match):
 
         class_name = match.group(2)
-        self.classes[class_name] = {'content': self.class_content, 'fields': [], 'methods': {}, 'annotations': self.current_class_annotations}
+        self.classes[class_name] = {'content': self.class_content, 'fields': {}, 'methods': {}, 'annotations': self.current_class_annotations}
         self.current_class = class_name
         self.current_class_annotations = []
 
@@ -98,8 +101,7 @@ class JavaParser:
         field_type = match.group(1)
         field_name = match.group(2)
         if self.current_class:
-            self.classes[self.current_class]['fields'].append(
-                (self.current_field_method_annotations, field_type, field_name))
+            self.classes[self.current_class]['fields'][field_name] = (self.current_field_method_annotations, field_type)
         self.current_field_method_annotations = []
 
     def add_method_params_as_fields(self, params_line):
@@ -108,7 +110,7 @@ class JavaParser:
             parameters = re.findall(r'(?:@\w+\s+)?(\w+)(?:<.*>)?(?:\.\.\.)?\s+(\w+)', params_line)
             for parameter in parameters:
                 field_type, field_name = parameter
-                self.classes[self.current_class]['fields'].append(([], field_type, field_name))
+                self.classes[self.current_class]['fields'][field_name] = ([], field_type)
                 self.current_method_params.append(parameter)
 
     def handle_method_begin(self, match, line):
@@ -143,7 +145,7 @@ class JavaParser:
     def handle_method_body_end(self):
         method_fields = re.findall(r'(\w+)\s+(\w+)(?:\s*=\s*.+)?;', ''.join(self.current_method_body))
         for field_type, field_name in method_fields:
-            self.classes[self.current_class]['fields'].append(([], field_type, field_name))
+            self.classes[self.current_class]['fields'][field_name] = ([], field_type)
 
         if self.current_method_name in self.classes[self.current_class]['methods']:
             (self.classes[self.current_class]['methods'][self.current_method_name]
@@ -164,18 +166,18 @@ class JavaParser:
         if params_str:
             return params_str[:-2]
         return params_str
-    def print_parsed_methods(self):
-        for class_name, class_data in self.classes.items():
-            print(f'{class_name}:')
-            print('Fields:')
-            for field_type, field_name in class_data['fields']:
-                print(f'    {field_type} {field_name}')
-            print('Methods:')
-            for access_modifier, return_type, method_name, method_params, method_body in class_data['methods']:
-                print(f'    {access_modifier} {return_type} {method_name}({self.get_method_params_as_string(method_params)}){{')
-                # for line in method_body:
-                #     print(f'{line}')
-                # print('    }')
+    # def print_parsed_methods(self):
+    #     for class_name, class_data in self.classes.items():
+    #         print(f'{class_name}:')
+    #         print('Fields:')
+    #         for field_type, field_name in class_data['fields']:
+    #             print(f'    {field_type} {field_name}')
+    #         print('Methods:')
+    #         for access_modifier, return_type, method_name, method_params, method_body in class_data['methods']:
+    #             print(f'    {access_modifier} {return_type} {method_name}({self.get_method_params_as_string(method_params)}){{')
+    #             # for line in method_body:
+    #             #     print(f'{line}')
+    #             # print('    }')
 
     def extract_classes_and_methods(self, class_name, method_body):
         if not method_body:
@@ -186,8 +188,16 @@ class JavaParser:
             outerClassMethods = re.findall(r'\b(\w+)\.(\w+)\s*\(', line)
             if outerClassMethods:
                 for outerClassName, outerMethodName in outerClassMethods:
+                    # if 'adminBean' in outerClassName:
+                    #     print('Check class name: ', outerClassName)
+                    # if 'sendMailWithCcNHtmlSupport' in outerMethodName:
+                    #     print('Check method name: ', outerMethodName)
                     if 'Service' in outerClassName:
                         self.find_method_by_name(f'{self.capitalize_first_char(outerClassName)}Impl', outerMethodName)
+                    elif outerClassName in self.classes[class_name]['fields']:
+                        self.find_method_by_name(
+                            self.get_implementation_class(self.classes[class_name]['fields'][outerClassName][1]),
+                            outerMethodName)
                     else:
                         self.find_method_by_name(f'{self.capitalize_first_char(outerClassName)}', outerMethodName)
 
@@ -224,6 +234,9 @@ class JavaParser:
         #     else:
         #         if self.log_flag:  # Check if log_flag is true
         #             print(f"// Field '{field_name}' not found in class '{class_name}'.")
+
+    def get_implementation_class(self, input_string):
+        return input_string.replace("Local", "Bean")
 
     def capitalize_first_char(self, input_string):
         if not input_string:
@@ -268,12 +281,16 @@ class JavaParser:
                     #     print(f"{method_content}")
                     self.extract_classes_and_methods(class_name, body)  # Call the method to extract classes and methods
                     return method_content
-            elif self.log_flag:
+            elif self.log_flag and method_name not in ('if', 'catch', ):
                 not_found_method = f"// Method '{method_name}' not found in class '{class_name}'."
-                if not_found_method not in self.not_found_methods:
-                    self.not_found_methods.append(not_found_method)
+                if not_found_method not in self.not_found_messages:
+                    self.not_found_messages.append(not_found_method)
                     print(not_found_method)
-
+        elif self.log_flag:
+            not_found_class = f"// Class '{class_name}' not found in parsed classes."
+            if not_found_class not in self.not_found_messages:
+                self.not_found_messages.append(not_found_class)
+                print(not_found_class)
     def generate_java_code(self):
         java_code = ""
         for class_name, class_info in self.req_classes.items():

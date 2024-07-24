@@ -27,7 +27,7 @@ if __name__ == '__main__':
     prompt = 'Update ProgramResourceJpaRepository class: add JPA query method to update programResourceStatusId. '
     remind = 'Note that you must response a class/interface with full implementation of updated/added code with no placeholder.  '
     # context = 'AddUpdateHandlerFileForm.load'
-    context = 'MachineAction.add'
+    context = 'ProductTravellerSession.approveBackEnd'
     pairs = extractClassAndMethod(context)
     print("Pairs of <class name, method name>:")
     request = ''
