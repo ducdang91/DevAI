@@ -55,7 +55,7 @@ class JavaParser:
             r'(?:private|public|protected)\s+(?:static\s+)?(?:final\s+)?(\w+)\s+(\w+)(?:\s*=\s*.+)?;', line)
         # method_match = re.search(r'(private|public|protected)\s+(?:static\s+)?(\w+(?:<.*>)?)\s+(\w+)\s*\((.*)', line)
         method_match = re.search(
-            r'(private|public|protected)\s+(?:static\s+)?([\w\\.]+(?:<.*>)?)\s+(\w+)\s*\(([^)]*)\)\s*(?:throws\s+[\w\\.]+)?\s*',
+            r'(private|public|protected)\s+(?:static\s+)?([\w\\.]+(?:<.*>)?)\s+(\w+)\s*\(([^)]*)\s*',
             line)
         i_method_match = re.search(r'\s+(?:static\s+)?(\w+(?:<.*>)?)\s+(\w+)\s*\((.*)\);', line)
         is_interface_method = self.current_class and ('JpaRepository' in self.current_class
