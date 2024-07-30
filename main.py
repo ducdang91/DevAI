@@ -27,17 +27,26 @@ if __name__ == '__main__':
     prompt = 'Update ProgramResourceJpaRepository class: add JPA query method to update programResourceStatusId. '
     remind = 'Note that you must response a class/interface with full implementation of updated/added code with no placeholder.  '
     # context = 'AddUpdateHandlerFileForm.load'
-    context = 'ProductTravellerSession.approveBackEnd'
-    pairs = extractClassAndMethod(context)
-    print("Pairs of <class name, method name>:")
-    request = ''
-    for pair in pairs:
-        if pair[1]:
-            request += mySourceCode.find_method_by_name(pair[0], pair[1])
-        else:
-            request += mySourceCode.find_class_by_name(pair[0])
-    request += '\n' + prompt + remind
-    mySourceCode.print_classes_and_methods()
+    print('Please input list of class and methods. Ex: QualificationAction.holdTraveller ')
+    context = input()
+    if not context:
+        context = 'QualificationAction.holdTraveller'
+    while context != 'exist':
+        pairs = extractClassAndMethod(context)
+        print("Pairs of <class name, method name>:")
+        request = ''
+        for pair in pairs:
+            if pair[1]:
+                method_content = mySourceCode.find_method_by_name(pair[0], pair[1])
+                if method_content:
+                    request += method_content
+            else:
+                # print(mySourceCode.get_class_content_by_name(pair[0]))
+                mySourceCode.find_class_by_name(pair[0])
+        request += '\n' + prompt + remind
+        print(mySourceCode.get_classes_and_methods_content())
+        print('Please input list of class and methods: ')
+        context = input()
     # print(request)
 
     # Usage
