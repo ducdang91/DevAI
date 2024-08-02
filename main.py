@@ -37,7 +37,7 @@ if __name__ == '__main__':
         request = ''
         for pair in pairs:
             if pair[1]:
-                method_content = mySourceCode.find_method_by_name(pair[0], pair[1])
+                method_content = mySourceCode.find_method_by_name_without_package_prefix(pair[0], pair[1])
                 if method_content:
                     request += method_content
             else:

@@ -11,6 +11,7 @@ class JavaParser:
         self.log_flag = True
         self.tab = None
         self.classes = {}
+        self.classes_package = {}
         self.req_classes = {}
         self.current_class = None
         self.current_package = None
@@ -59,17 +60,14 @@ class JavaParser:
                 elif line.startswith('import'):
                     import_match = re.search(r'import\s+([\w\\.]+)\.(\w+);', line)
                     if import_match:
-                        import_class = import_match.group(1)
-                        import_method = import_match.group(2)
-                        if import_class in self.classes:
-                            if import_method in self.classes[import_class]['methods']:
-                                self.find_method_by_name(import_class, import_method)
+                        self.current_imports[import_match.group(2)] = import_match.group(1)
                 else:
                     self.class_content += line
                     self.parse_line(line)
 
         if self.current_class:
             self.classes[self.current_class]['content'] = self.class_content
+            self.classes[self.current_class]['imports'] = self.current_imports
 
     def parse_line(self, line):
         if line == '\n':
@@ -124,8 +122,13 @@ class JavaParser:
 
     def handle_class_or_interface(self, match):
         class_name = match.group(2)
+        if self.current_package is not None:
+            if class_name not in self.classes_package:
+                self.classes_package[class_name] = []
+            self.classes_package[class_name].append(self.current_package)
+
         self.current_class = f"{self.current_package}.{class_name}"
-        self.classes[self.current_class] = {'content': self.class_content, 'fields': {}, 'methods': {},
+        self.classes[self.current_class] = {'content': self.class_content, 'imports': {}, 'fields': {}, 'methods': {},
                                             'annotations': self.current_class_annotations}
         self.current_class_annotations = []
 
@@ -224,15 +227,14 @@ class JavaParser:
 
         for line in method_body:
             # if 'getProgramFileName' in line:
-            #     print('Check method name: ', line)
             innerClassMethods = re.findall(r'\b(\w+)\s*\(', line)
             outerClassMethods = re.findall(r'\b(\w+)\.(\w+)\s*\(', line)
             if outerClassMethods:
                 for outerClassName, outerMethodName in outerClassMethods:
                     # if 'adminBean' in outerClassName:
                     #     print('Check class name: ', outerClassName)
-                    if 'setTotalTestTime' in outerMethodName:
-                        print('Check method name: ', line)
+                    # if 'setHoldReason' in outerMethodName:
+                    #     print('Check method name: ', line)
                     field_type, field_field_type = None, None
                     if outerClassName in self.classes[class_name]['fields']:
                         field_type = self.classes[class_name]['fields'][outerClassName]
@@ -241,51 +243,60 @@ class JavaParser:
                         self.find_method_by_name(f'{self.capitalize_first_char(outerClassName)}Impl', outerMethodName)
                     elif field_type is not None:
                         lombok_field = False
-                        if field_type[1] in self.classes and outerMethodName in self.classes[field_type[1]]['methods']:
-                            self.find_method_by_name(field_type[1], outerMethodName)
-                            if self.get_fields_name(outerMethodName) in self.classes[field_type[1]]['fields']:
+                        if field_type[1] in self.classes[class_name]['imports']:
+                            package_class_name = f'{self.classes[class_name]['imports'][field_type[1]]}.{field_type[1]}'
+                            if package_class_name in self.classes and outerMethodName in \
+                                    self.classes[package_class_name]['methods']:
+                                self.find_method_by_name(package_class_name, outerMethodName)
+                                if self.get_fields_name(outerMethodName) in self.classes[package_class_name]['fields']:
+                                    field_field_type = \
+                                    self.classes[package_class_name]['fields'][self.get_fields_name(outerMethodName)][1]
+                                    self.req_classes[package_class_name]['fields'][
+                                        self.get_fields_name(outerMethodName)] = \
+                                        ([], field_field_type)
+
+                                elif self.set_fields_name(outerMethodName) in self.classes[package_class_name][
+                                    'fields']:
+                                    field_field_type = \
+                                    self.classes[package_class_name]['fields'][self.set_fields_name(outerMethodName)][1]
+                                    self.req_classes[package_class_name]['fields'][
+                                        self.set_fields_name(outerMethodName)] = \
+                                        ([], field_field_type)
+
+                            elif package_class_name in self.classes and self.get_fields_name(outerMethodName) in \
+                                    self.classes[package_class_name]['fields']:
                                 field_field_type = \
-                                self.classes[field_type[1]]['fields'][self.get_fields_name(outerMethodName)][1]
-                                self.req_classes[field_type[1]]['fields'][self.get_fields_name(outerMethodName)] = \
+                                self.classes[package_class_name]['fields'][self.get_fields_name(outerMethodName)][1]
+                                lombok_field = True
+                            elif package_class_name.replace("Local", "Bean") in self.classes and outerMethodName in \
+                                    self.classes[package_class_name.replace("Local", "Bean")]['methods']:
+                                field_field_type = package_class_name.replace("Local", "Bean")
+                                self.find_method_by_name(field_field_type, outerMethodName)
+                            elif package_class_name.replace("Local", "") in self.classes:
+                                field_field_type = package_class_name.replace("Local", "")
+                                self.find_method_by_name(field_field_type, outerMethodName)
+
+                            if lombok_field and field_field_type is not None:
+                                if field_field_type not in self.req_classes:
+                                    self.req_classes[field_field_type] = {'methods': {}, 'fields': {}}
+                                self.req_classes[field_field_type]['fields'][self.get_fields_name(outerMethodName)] = \
                                     ([], field_field_type)
-
-                            elif self.set_fields_name(outerMethodName) in self.classes[field_type[1]]['fields']:
-                                field_field_type = \
-                                self.classes[field_type[1]]['fields'][self.set_fields_name(outerMethodName)][1]
-                                self.req_classes[field_type[1]]['fields'][self.set_fields_name(outerMethodName)] = \
-                                    ([], field_field_type)
-
-                        elif field_type[1] in self.classes and self.get_fields_name(outerMethodName) in \
-                                self.classes[field_type[1]]['fields']:
-                            field_field_type = \
-                            self.classes[field_type[1]]['fields'][self.get_fields_name(outerMethodName)][1]
-                            lombok_field = True
-                        elif field_type[1].replace("Local", "Bean") in self.classes and outerMethodName in \
-                                self.classes[field_type[1].replace("Local", "Bean")]['methods']:
-                            field_field_type = field_type[1].replace("Local", "Bean")
-                            self.find_method_by_name(field_field_type, outerMethodName)
-                        elif field_type[1].replace("Local", "") in self.classes:
-                            field_field_type = field_type[1].replace("Local", "")
-                            self.find_method_by_name(field_field_type, outerMethodName)
-
-                        if lombok_field and field_field_type is not None:
-                            if field_field_type not in self.req_classes:
-                                self.req_classes[field_field_type] = {'methods': {}, 'fields': {}}
-                            self.req_classes[field_field_type]['fields'][self.get_fields_name(outerMethodName)] = \
-                                ([], field_field_type)
-                    elif outerClassName in self.classes[class_name]['fields']:
+                    elif self.get_package_class_name(outerClassName) in self.classes[class_name]['fields']:
                         self.find_method_by_name(
-                            self.get_implementation_class(self.classes[class_name]['fields'][outerClassName][1]),
+                            self.get_implementation_class(
+                                self.classes[class_name]['fields'][self.get_package_class_name(outerClassName)][1]),
                             outerMethodName)
                     elif 'this' == outerClassName:
-                        self.find_method_by_name(class_name, outerMethodName)
+                        self.find_method_by_name(self.get_package_class_name(class_name), outerMethodName)
                     else:
-                        self.find_method_by_name(f'{self.capitalize_first_char(outerClassName)}', outerMethodName)
+                        self.find_method_by_name(
+                            self.get_package_class_name(f'{self.capitalize_first_char(outerClassName)}'),
+                            outerMethodName)
 
             for inSameClassMethod in innerClassMethods:
                 if inSameClassMethod not in [method[1] for method in outerClassMethods]:
                     if f'new {inSameClassMethod}' not in line and f'.{inSameClassMethod}' not in line:
-                        self.find_method_by_name(f'{class_name}', inSameClassMethod)
+                        self.find_method_by_name(self.get_package_class_name(class_name), inSameClassMethod)
 
         # method_calls1 = re.findall(r'(\w+)\.(\w+)\(', ''.join(method_body))
         # method_calls2 = re.findall(r' (\w+)\(', ''.join(method_body))
@@ -334,16 +345,25 @@ class JavaParser:
         for line in method_body:
             sys.stdout.write(line)
 
-    def find_method_by_name(self, class_name, method_name):
-        if 'getTotalTestTime' == method_name:
-            print(f'// Class {class_name} has method {method_name}')
-        if class_name in self.req_classes and method_name in self.req_classes[class_name]['methods']:
-            return
+    def get_package_class_name(self, class_name):
+        if class_name not in self.classes_package:
+            return class_name
+        return f'{self.classes_package[class_name][0]}.{class_name}'
 
-        if class_name in self.classes:
-            if method_name in self.classes[class_name]['methods']:
-                for access_modifier, return_type, name, params, body in self.classes[class_name]['methods'][
-                    method_name]:
+    def find_method_by_name_without_package_prefix(self, class_name, method_name):
+        package_class_name = f'{self.classes_package[class_name][0]}.{class_name}'
+        self.find_method_by_name(package_class_name, method_name)
+
+    def find_method_by_name(self, package_class_name, method_name):
+        # if 'getTotalTestTime' == method_name:
+        #     print(f'// Class {package_class_name} has method {method_name}')
+
+        if package_class_name in self.req_classes and method_name in self.req_classes[package_class_name]['methods']:
+            return
+        if package_class_name in self.classes:
+            if method_name in self.classes[package_class_name]['methods']:
+                for access_modifier, return_type, name, params, body in (
+                        self.classes)[package_class_name]['methods'][method_name]:
                     # if 'holdTraveller' == method_name:
                     #     print(f'// Class {class_name} has method {method_name}')
                     # if name == method_name:
@@ -359,20 +379,23 @@ class JavaParser:
 
                     method_and_params = f'{name} {self.get_method_params_as_string(params)}'
 
-                    if class_name in self.req_classes:
-                        if method_name in self.req_classes[class_name]['methods']:
-                            self.req_classes[class_name]['methods'][method_name].append(
+                    if package_class_name in self.req_classes:
+                        if method_name in self.req_classes[package_class_name]['methods']:
+                            self.req_classes[package_class_name]['methods'][method_name].append(
                                 (method_and_params, method_content))
                         else:
-                            self.req_classes[class_name]['methods'][method_name] = [(method_and_params, method_content)]
+                            self.req_classes[package_class_name]['methods'][method_name] = [
+                                (method_and_params, method_content)]
                     else:
-                        self.req_classes[class_name] = {'methods': {}, 'fields': {}}
-                        self.req_classes[class_name]['methods'][method_name] = [(method_and_params, method_content)]
+                        self.req_classes[package_class_name] = {'methods': {}, 'fields': {}}
+                        self.req_classes[package_class_name]['methods'][method_name] = [
+                            (method_and_params, method_content)]
 
                     # if self.log_flag:
                     #     print(f"{class_name} class has {method_name} method:")
                     #     print(f"{method_content}")
-                    self.extract_classes_and_methods(class_name, body)  # Call the method to extract classes and methods
+                    self.extract_classes_and_methods(package_class_name,
+                                                     body)  # Call the method to extract classes and methods
                     # return method_content
             elif (self.log_flag and method_name not in
                   ('if', 'catch', 'Exception', 'equals', 'replaceAll', 'for', 'get', 'setHint', 'getStackTrace',
@@ -380,12 +403,12 @@ class JavaParser:
                 # if 'SimpleQueryBuilder' in method_name:
                 #     print(f"// {method_name} method not found")
 
-                not_found_method = f"{class_name}.{method_name} not found"
+                not_found_method = f"{package_class_name}.{method_name} not found"
                 if not_found_method not in self.not_found_messages:
                     self.not_found_messages.append(not_found_method)
                     print(not_found_method)
         elif self.log_flag:
-            not_found_class = f"    {class_name}.{method_name} not found"
+            not_found_class = f"    {package_class_name}.{method_name} not found"
             if not_found_class not in self.not_found_messages:
                 self.not_found_messages.append(not_found_class)
                 print(not_found_class)
@@ -433,21 +456,25 @@ class JavaParser:
         try:
             if not os.path.exists(filename):
                 with open(filename, 'wb') as file:
-                    pickle.dump(self.classes, file)
+                    data = {
+                        'classes': self.classes,
+                        'classes_package': self.classes_package
+                    }
+                    pickle.dump(data, file)
                 print(f"Data saved to {filename}")
             else:
                 print(f"File {filename} already exists.")
         except FileExistsError:
             print(f"File {filename} already exists.")
 
-    ### Loading from a File
-
     def load_from_file(self, filename):
         if not os.path.exists(filename):
             print(f"File {filename} does not exist. Cannot load data.")
             return
         with open(filename, 'rb') as file:
-            self.classes = pickle.load(file)
+            data = pickle.load(file)
+            self.classes = data.get('classes', {})
+            self.classes_package = data.get('classes_package', {})
         print(f"Data loaded from {filename}")
 
 
