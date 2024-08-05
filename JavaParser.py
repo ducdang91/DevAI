@@ -22,17 +22,23 @@ class JavaParser:
         self.current_method_name = None
         self.current_method_params = []
         self.current_method_body = None
+        self.current_method_fields = {}
         self.current_class_annotations = []
         self.current_field_method_annotations = []
+        self.files_to_check = None
+        # self.files_to_check = ['QualificationAction.java', 'Setup.java', 'ProductTraveller.java', 'ProductTravellerSession.java']
 
     def parse_directory(self, directory_path):
         saved_classes_file_path = os.path.join(os.getcwd(), os.path.basename(directory_path) + '-classes.txt')
-        self.load_from_file(saved_classes_file_path)
+        if self.files_to_check is None:
+            self.load_from_file(saved_classes_file_path)
         if self.classes == {}:
             for root, _, files in os.walk(directory_path):
                 for file_name in files:
-                    if file_name.endswith('.java') and file_name in (
-                    'Setup.java', 'QualificationAction.java', 'ProductTraveller.java', 'ProductTravellerSession.java'):
+                    if self.files_to_check is not None and file_name in self.files_to_check:
+                        file_path = os.path.join(root, file_name)
+                        self.parse_file(file_path)
+                    if self.files_to_check is None and file_name.endswith('.java'):
                         file_path = os.path.join(root, file_name)
                         self.parse_file(file_path)
             self.save_to_file(saved_classes_file_path)
@@ -72,9 +78,9 @@ class JavaParser:
     def parse_line(self, line):
         if line == '\n':
             return
-        if 'getTotalTestTime(' in line:
-            print(f'Check {line}')
-
+        # if 'Long getSetupId' in line:
+        #     print(f'Check {line}')
+        # // Add fields to methods, not class
         class_match = re.search(r'(class|interface)\s+(\w+)', line)
         field_match = re.search(
             r'(?:private|public|protected)\s+(?:static\s+)?(?:final\s+)?(\w+)\s+(\w+)(?:\s*=\s*.+)?;', line)
@@ -101,11 +107,11 @@ class JavaParser:
         if line.startswith(f'{self.tab}@') and self.current_class:
             self.handle_field_or_method_annotation(line)
         elif constructor_match:
-            self.handle_field(constructor_match)
+            self.handle_method_field(constructor_match)
             if self.current_method_body is not None and line != f'{self.tab}}}\n':
                 self.current_method_body.append(line)
         elif forloop_var_match:
-            self.handle_field(forloop_var_match)
+            self.handle_method_field(forloop_var_match)
             if self.current_method_body is not None and line != f'{self.tab}}}\n':
                 self.current_method_body.append(line)
         elif method_match:
@@ -129,7 +135,7 @@ class JavaParser:
 
         self.current_class = f"{self.current_package}.{class_name}"
         self.classes[self.current_class] = {'content': self.class_content, 'imports': {}, 'fields': {}, 'methods': {},
-                                            'annotations': self.current_class_annotations}
+                                            'method_fields': {},'annotations': self.current_class_annotations}
         self.current_class_annotations = []
 
     def handle_class_annotation(self, annotaion):
@@ -145,13 +151,20 @@ class JavaParser:
             self.classes[self.current_class]['fields'][field_name] = (self.current_field_method_annotations, field_type)
         self.current_field_method_annotations = []
 
+    def handle_method_field(self, match):
+        field_type = match.group(1)
+        field_name = match.group(2)
+        if self.current_method_name is not None:
+            self.current_method_fields[field_name] = field_type
+
     def add_method_params_as_fields(self, params_line):
         # Extract parameters from params_line
         if self.current_class:
             parameters = re.findall(r'(?:@\w+\s+)?(\w+)(?:<.*>)?(?:\.\.\.)?\s+(\w+)', params_line)
             for parameter in parameters:
                 field_type, field_name = parameter
-                self.classes[self.current_class]['fields'][field_name] = ([], field_type)
+                self.current_method_fields[field_name] = field_type
+                # self.classes[self.current_class]['fields'][field_name] = ([], field_type)
                 self.current_method_params.append(parameter)
 
     def handle_method_begin(self, match, line):
@@ -184,9 +197,9 @@ class JavaParser:
             self.current_method_multi_line_params = False
 
     def handle_method_body_end(self):
-        method_fields = re.findall(r'(\w+)\s+(\w+)(?:\s*=\s*.+)?;', ''.join(self.current_method_body))
-        for field_type, field_name in method_fields:
-            self.classes[self.current_class]['fields'][field_name] = ([], field_type)
+        # method_fields = re.findall(r'(\w+)\s+(\w+)(?:\s*=\s*.+)?;', ''.join(self.current_method_body))
+        # for field_type, field_name in method_fields:
+        #     self.classes[self.current_class]['fields'][field_name] = ([], field_type)
 
         if self.current_method_name in self.classes[self.current_class]['methods']:
             (self.classes[self.current_class]['methods'][self.current_method_name]
@@ -196,8 +209,17 @@ class JavaParser:
             self.classes[self.current_class]['methods'][self.current_method_name] = \
                 [(self.current_method_access_modifier, self.current_method_return_type,
                   self.current_method_name, self.current_method_params, self.current_method_body)]
+
+        if self.current_method_fields:
+            if self.current_method_name not in self.classes[self.current_class]['method_fields']:
+                self.classes[self.current_class]['method_fields'][self.current_method_name] = self.current_method_fields
+            else:
+                self.classes[self.current_class]['method_fields'][self.current_method_name].update(self.current_method_fields)
+
         self.current_method_body = None
+        self.current_method_name = None
         self.current_method_params = []
+        self.current_method_fields = {}
 
     def get_method_params_as_string(self, method_params):
         params_str = ''
@@ -221,22 +243,26 @@ class JavaParser:
     #             #     print(f'{line}')
     #             # print('    }')
 
-    def extract_classes_and_methods(self, class_name, method_body):
+    def extract_classes_and_methods(self, class_name, method_name, method_body):
         if not method_body:
             return
 
         for line in method_body:
-            # if 'getProgramFileName' in line:
+            # if 'holdReasonServer.' in line:
+            #     print('Check method name: ', line)
             innerClassMethods = re.findall(r'\b(\w+)\s*\(', line)
             outerClassMethods = re.findall(r'\b(\w+)\.(\w+)\s*\(', line)
             if outerClassMethods:
                 for outerClassName, outerMethodName in outerClassMethods:
                     # if 'adminBean' in outerClassName:
                     #     print('Check class name: ', outerClassName)
-                    # if 'setHoldReason' in outerMethodName:
+                    # if 'getTravellerId' in outerMethodName:
                     #     print('Check method name: ', line)
                     field_type, field_field_type = None, None
-                    if outerClassName in self.classes[class_name]['fields']:
+                    if (method_name in self.classes[class_name]['method_fields']
+                            and outerClassName in self.classes[class_name]['method_fields'][method_name]):
+                        field_type = self.classes[class_name]['method_fields'][method_name][outerClassName]
+                    elif outerClassName in self.classes[class_name]['fields']:
                         field_type = self.classes[class_name]['fields'][outerClassName]
 
                     if 'Service' in outerClassName:
@@ -394,7 +420,7 @@ class JavaParser:
                     # if self.log_flag:
                     #     print(f"{class_name} class has {method_name} method:")
                     #     print(f"{method_content}")
-                    self.extract_classes_and_methods(package_class_name,
+                    self.extract_classes_and_methods(package_class_name, method_name,
                                                      body)  # Call the method to extract classes and methods
                     # return method_content
             elif (self.log_flag and method_name not in
@@ -454,7 +480,7 @@ class JavaParser:
 
     def save_to_file(self, filename):
         try:
-            if not os.path.exists(filename):
+            if not os.path.exists(filename) and self.files_to_check is None:
                 with open(filename, 'wb') as file:
                     data = {
                         'classes': self.classes,
