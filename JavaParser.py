@@ -25,7 +25,10 @@ class JavaParser:
         self.current_method_fields = {}
         self.current_class_annotations = []
         self.current_field_method_annotations = []
+        self.field_or_method_annotation_start = False
+        self.class_annotation_start = False
         self.files_to_check = None
+        # self.files_to_check = ['ProductTraveller.java']
         # self.files_to_check = ['QualificationAction.java', 'Setup.java', 'ProductTraveller.java', 'ProductTravellerSession.java']
 
     def parse_directory(self, directory_path):
@@ -51,6 +54,8 @@ class JavaParser:
         self.current_method_return_type = None
         self.current_method_name = None
         self.current_method_body = None
+        self.field_or_method_annotation_start = False
+        self.class_annotation_start = False
         self.tab = None
 
         self.class_content = ''
@@ -78,12 +83,12 @@ class JavaParser:
     def parse_line(self, line):
         if line == '\n':
             return
-        # if 'Long getSetupId' in line:
-        #     print(f'Check {line}')
+        if 'private ProductTraveller selectedProductTravellerByCustomerProduct' in line:
+            print(f'Check {line}')
         # // Add fields to methods, not class
         class_match = re.search(r'(class|interface)\s+(\w+)', line)
         field_match = re.search(
-            r'(?:private|public|protected)\s+(?:static\s+)?(?:final\s+)?(\w+)\s+(\w+)(?:\s*=\s*.+)?;', line)
+            r'(?:private|public|protected)\s+(?:static\s+)?(?:final\s+)?(\w+(?:<[\w<>]+>)?)\s+(\w+)\s*(?:=\s*new\s+\w+\s*\([^;]*\))?\s*;', line)
         constructor_match = re.search(r'(\w+)\s+(\w+)\s*=\s*new', line)
         forloop_var_match = re.search(r'for \((\w+) (\w+) :', line)
         # method_match = re.search(r'(private|public|protected)\s+(?:static\s+)?(\w+(?:<.*>)?)\s+(\w+)\s*\((.*)', line)
@@ -96,16 +101,22 @@ class JavaParser:
 
         if line.startswith("@") and not self.current_class:
             self.handle_class_annotation(line)
+            self.class_annotation_start = True
         elif class_match and self.current_class is None:
+            self.class_annotation_start = False
             self.handle_class_or_interface(class_match)
+        elif self.class_annotation_start:
+            self.handle_class_annotation(line)
+        elif line.startswith(f'{self.tab}@') and self.current_class:
+            self.handle_field_or_method_annotation(line)
+            self.field_or_method_annotation_start = True
         elif field_match:
+            self.field_or_method_annotation_start = False
             if self.tab is None and line.startswith('    '):
                 self.tab = '    '
             elif self.tab is None and line.startswith('  '):
                 self.tab = '  '
             self.handle_field(field_match)
-        if line.startswith(f'{self.tab}@') and self.current_class:
-            self.handle_field_or_method_annotation(line)
         elif constructor_match:
             self.handle_method_field(constructor_match)
             if self.current_method_body is not None and line != f'{self.tab}}}\n':
@@ -115,7 +126,10 @@ class JavaParser:
             if self.current_method_body is not None and line != f'{self.tab}}}\n':
                 self.current_method_body.append(line)
         elif method_match:
+            self.field_or_method_annotation_start = False
             self.handle_method_begin(method_match, line)
+        elif self.field_or_method_annotation_start:
+            self.handle_field_or_method_annotation(line)
         elif is_interface_method and i_method_match:
             self.handle_interface_method_begin(i_method_match)
         elif self.current_method_multi_line_params:
@@ -173,6 +187,7 @@ class JavaParser:
         self.current_method_name = match.group(3)
         # self.current_method_params = match.group(4)
         self.current_method_body = []
+        self.current_field_method_annotations = []
         # print(f'{self.current_class}: {line}')
 
         self.add_method_params_as_fields(match.group(4))
@@ -256,8 +271,8 @@ class JavaParser:
                 for outerClassName, outerMethodName in outerClassMethods:
                     # if 'adminBean' in outerClassName:
                     #     print('Check class name: ', outerClassName)
-                    # if 'getTravellerId' in outerMethodName:
-                    #     print('Check method name: ', line)
+                    if 'getTravellerId' in outerMethodName:
+                        print('Check method name: ', line)
                     field_type, field_field_type = None, None
                     if (method_name in self.classes[class_name]['method_fields']
                             and outerClassName in self.classes[class_name]['method_fields'][method_name]):
@@ -275,19 +290,19 @@ class JavaParser:
                                     self.classes[package_class_name]['methods']:
                                 self.find_method_by_name(package_class_name, outerMethodName)
                                 if self.get_fields_name(outerMethodName) in self.classes[package_class_name]['fields']:
-                                    field_field_type = \
-                                    self.classes[package_class_name]['fields'][self.get_fields_name(outerMethodName)][1]
+                                    field_annotation, field_field_type = \
+                                    self.classes[package_class_name]['fields'][self.get_fields_name(outerMethodName)]
                                     self.req_classes[package_class_name]['fields'][
                                         self.get_fields_name(outerMethodName)] = \
-                                        ([], field_field_type)
+                                        (field_annotation, field_field_type)
 
                                 elif self.set_fields_name(outerMethodName) in self.classes[package_class_name][
                                     'fields']:
-                                    field_field_type = \
-                                    self.classes[package_class_name]['fields'][self.set_fields_name(outerMethodName)][1]
+                                    field_annotation, field_field_type = \
+                                    self.classes[package_class_name]['fields'][self.set_fields_name(outerMethodName)]
                                     self.req_classes[package_class_name]['fields'][
                                         self.set_fields_name(outerMethodName)] = \
-                                        ([], field_field_type)
+                                        (field_annotation, field_field_type)
 
                             elif package_class_name in self.classes and self.get_fields_name(outerMethodName) in \
                                     self.classes[package_class_name]['fields']:
@@ -445,8 +460,10 @@ class JavaParser:
             java_code += f"class {class_name} {{\n"
 
             # Add fields to the Java class
-            for field_name, field_type in class_info['fields'].items():
-                java_code += f"    {field_type[1]} {field_name};\n"
+            for field_name, (annotation, field_type) in class_info['fields'].items():
+                if annotation:
+                    annotation_code = ''.join(annotation)
+                    java_code += f"{annotation_code}    {field_type} {field_name};\n\n"
 
             # Add methods to the Java class
             for method_name, methods in class_info['methods'].items():
