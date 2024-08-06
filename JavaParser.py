@@ -92,7 +92,7 @@ class JavaParser:
         # // Add fields to methods, not class
         class_match = re.search(r'(class|interface)\s+(\w+)', line)
         field_match = re.search(
-            r'(?:private|public|protected)\s+(?:static\s+)?(?:final\s+)?(\w+(?:<[\w<>]+>)?)\s+(\w+)\s*(?:=\s*new\s+\w+\s*\([^;]*\))?\s*;', line)
+    r'(?:private|public|protected)\s+(?:static\s+)?(?:final\s+)?(\w+(?:<[\w<>]+>)?)\s+(\w+)(\s*(?:=\s*[^;]*)?)\s*;', line)
         constructor_match = re.search(r'(\w+)\s+(\w+)\s*=\s*new', line)
         var_assign_match = re.search(r'(\w+)\s+(\w+)\s*=', line)
         var_define_match = re.search(r'(\w+)\s+(\w+)\s*;', line)
@@ -176,8 +176,9 @@ class JavaParser:
     def handle_field(self, match):
         field_type = match.group(1)
         field_name = match.group(2)
+        field_assign_content = match.group(3)
         if self.current_class and field_name not in self.classes[self.current_class]['fields']:
-            self.classes[self.current_class]['fields'][field_name] = (self.current_field_method_annotations, field_type)
+            self.classes[self.current_class]['fields'][field_name] = (self.current_field_method_annotations, field_type, field_assign_content)
         self.current_field_method_annotations = []
 
     def handle_method_field(self, match):
@@ -305,19 +306,19 @@ class JavaParser:
                                     self.classes[package_class_name]['methods']:
                                 self.find_method_by_name(package_class_name, outerMethodName)
                                 if self.get_fields_name(outerMethodName) in self.classes[package_class_name]['fields']:
-                                    field_annotation, field_field_type = \
+                                    field_annotation, field_field_type, field_assign_content = \
                                     self.classes[package_class_name]['fields'][self.get_fields_name(outerMethodName)]
                                     self.req_classes[package_class_name]['fields'][
                                         self.get_fields_name(outerMethodName)] = \
-                                        (field_annotation, field_field_type)
+                                        (field_annotation, field_field_type, field_assign_content)
 
                                 elif self.set_fields_name(outerMethodName) in self.classes[package_class_name][
                                     'fields']:
-                                    field_annotation, field_field_type = \
+                                    field_annotation, field_field_type, field_assign_content = \
                                     self.classes[package_class_name]['fields'][self.set_fields_name(outerMethodName)]
                                     self.req_classes[package_class_name]['fields'][
                                         self.set_fields_name(outerMethodName)] = \
-                                        (field_annotation, field_field_type)
+                                        (field_annotation, field_field_type, field_assign_content)
 
                             elif package_class_name in self.classes and self.get_fields_name(outerMethodName) in \
                                     self.classes[package_class_name]['fields']:
@@ -473,10 +474,10 @@ class JavaParser:
             java_code += f"class {class_name} {{\n"
 
             # Add fields to the Java class
-            for field_name, (annotation, field_type) in class_info['fields'].items():
+            for field_name, (annotation, field_type, field_assign_content) in class_info['fields'].items():
                 if annotation:
                     annotation_code = ''.join(annotation)
-                    java_code += f"{annotation_code}    {field_type} {field_name};\n\n"
+                    java_code += f"{annotation_code}    {field_type} {field_name}{field_assign_content};\n\n"
 
             # Add methods to the Java class
             for method_name, methods in class_info['methods'].items():
