@@ -32,7 +32,7 @@ class JavaParser:
                                 'getStackTrace', 'log', 'Exception', 'for', 'getLogger', 'log', 'getId', 'replaceAll',
                                 'isEmpty', 'find', 'trim')
         self.files_to_check = None
-        # self.files_to_check = ['QualificationAction.java']
+        # self.files_to_check = ['ProductTraveller.java']
         # self.files_to_check = ['QualificationAction.java', 'Setup.java', 'ProductTraveller.java', 'ProductTravellerSession.java']
 
     def parse_directory(self, directory_path):
@@ -87,7 +87,7 @@ class JavaParser:
     def parse_line(self, line):
         if line == '\n':
             return
-        if 'void changeCurrentTravellerState' in line and self.files_to_check:
+        if 'Long travellerId' in line and self.files_to_check:
             print(f'Check {line}')
         # // Add fields to methods, not class
         class_match = re.search(r'(class|interface)\s+(\w+)', line)
@@ -114,7 +114,6 @@ class JavaParser:
         elif self.class_annotation_start:
             self.handle_class_annotation(line)
         elif line.startswith(f'{self.tab}@') and self.current_class:
-            self.handle_field_or_method_annotation(line)
             self.field_or_method_annotation_start = True
 
         # field annotation and field declaration can be in the same line
