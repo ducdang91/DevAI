@@ -25,10 +25,14 @@ class JavaParser:
         self.current_method_fields = {}
         self.current_class_annotations = []
         self.current_field_method_annotations = []
+
         self.field_or_method_annotation_start = False
         self.class_annotation_start = False
+        self.ignored_methods = ('if', 'catch', 'Exception', 'equals', 'replaceAll', 'for', 'get', 'setHint',
+                                'getStackTrace', 'log', 'Exception', 'for', 'getLogger', 'log', 'getId', 'replaceAll',
+                                'isEmpty', 'find', 'trim')
         self.files_to_check = None
-        # self.files_to_check = ['ProductTraveller.java']
+        # self.files_to_check = ['QualificationAction.java']
         # self.files_to_check = ['QualificationAction.java', 'Setup.java', 'ProductTraveller.java', 'ProductTravellerSession.java']
 
     def parse_directory(self, directory_path):
@@ -83,13 +87,15 @@ class JavaParser:
     def parse_line(self, line):
         if line == '\n':
             return
-        if 'private ProductTraveller selectedProductTravellerByCustomerProduct' in line:
+        if 'void changeCurrentTravellerState' in line and self.files_to_check:
             print(f'Check {line}')
         # // Add fields to methods, not class
         class_match = re.search(r'(class|interface)\s+(\w+)', line)
         field_match = re.search(
             r'(?:private|public|protected)\s+(?:static\s+)?(?:final\s+)?(\w+(?:<[\w<>]+>)?)\s+(\w+)\s*(?:=\s*new\s+\w+\s*\([^;]*\))?\s*;', line)
         constructor_match = re.search(r'(\w+)\s+(\w+)\s*=\s*new', line)
+        var_assign_match = re.search(r'(\w+)\s+(\w+)\s*=', line)
+        var_define_match = re.search(r'(\w+)\s+(\w+)\s*;', line)
         forloop_var_match = re.search(r'for \((\w+) (\w+) :', line)
         # method_match = re.search(r'(private|public|protected)\s+(?:static\s+)?(\w+(?:<.*>)?)\s+(\w+)\s*\((.*)', line)
         method_match = re.search(
@@ -110,15 +116,25 @@ class JavaParser:
         elif line.startswith(f'{self.tab}@') and self.current_class:
             self.handle_field_or_method_annotation(line)
             self.field_or_method_annotation_start = True
-        elif field_match:
-            self.field_or_method_annotation_start = False
+
+        # field annotation and field declaration can be in the same line
+        if field_match:
             if self.tab is None and line.startswith('    '):
                 self.tab = '    '
             elif self.tab is None and line.startswith('  '):
                 self.tab = '  '
             self.handle_field(field_match)
+            self.field_or_method_annotation_start = False
         elif constructor_match:
             self.handle_method_field(constructor_match)
+            if self.current_method_body is not None and line != f'{self.tab}}}\n':
+                self.current_method_body.append(line)
+        elif var_assign_match:
+            self.handle_method_field(var_assign_match)
+            if self.current_method_body is not None and line != f'{self.tab}}}\n':
+                self.current_method_body.append(line)
+        elif var_define_match:
+            self.handle_method_field(var_define_match)
             if self.current_method_body is not None and line != f'{self.tab}}}\n':
                 self.current_method_body.append(line)
         elif forloop_var_match:
@@ -271,7 +287,7 @@ class JavaParser:
                 for outerClassName, outerMethodName in outerClassMethods:
                     # if 'adminBean' in outerClassName:
                     #     print('Check class name: ', outerClassName)
-                    if 'getTravellerId' in outerMethodName:
+                    if 'substring' in outerMethodName:
                         print('Check method name: ', line)
                     field_type, field_field_type = None, None
                     if (method_name in self.classes[class_name]['method_fields']
@@ -438,9 +454,7 @@ class JavaParser:
                     self.extract_classes_and_methods(package_class_name, method_name,
                                                      body)  # Call the method to extract classes and methods
                     # return method_content
-            elif (self.log_flag and method_name not in
-                  ('if', 'catch', 'Exception', 'equals', 'replaceAll', 'for', 'get', 'setHint', 'getStackTrace',
-                   'log', 'Exception', 'for', 'getLogger', 'log', 'getId', 'replaceAll', 'isEmpty')):
+            elif self.log_flag and method_name not in self.ignored_methods:
                 # if 'SimpleQueryBuilder' in method_name:
                 #     print(f"// {method_name} method not found")
 
@@ -448,7 +462,7 @@ class JavaParser:
                 if not_found_method not in self.not_found_messages:
                     self.not_found_messages.append(not_found_method)
                     print(not_found_method)
-        elif self.log_flag:
+        elif self.log_flag and method_name not in self.ignored_methods:
             not_found_class = f"    {package_class_name}.{method_name} not found"
             if not_found_class not in self.not_found_messages:
                 self.not_found_messages.append(not_found_class)
