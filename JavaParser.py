@@ -32,7 +32,7 @@ class JavaParser:
                                 'getStackTrace', 'log', 'Exception', 'for', 'getLogger', 'log', 'getId', 'replaceAll',
                                 'isEmpty', 'find', 'trim')
         self.files_to_check = None
-        # self.files_to_check = ['ProductTraveller.java']
+        # self.files_to_check = ['ModeType.java']
         # self.files_to_check = ['QualificationAction.java', 'Setup.java', 'ProductTraveller.java', 'ProductTravellerSession.java']
 
     def parse_directory(self, directory_path):
@@ -90,7 +90,7 @@ class JavaParser:
         if 'Long travellerId' in line and self.files_to_check:
             print(f'Check {line}')
         # // Add fields to methods, not class
-        class_match = re.search(r'(class|interface)\s+(\w+)', line)
+        class_match = re.search(r'(class|interface|enum)\s+(\w+)', line)
         field_match = re.search(
     r'(?:private|public|protected)\s+(?:static\s+)?(?:final\s+)?(\w+(?:<[\w<>]+>)?)\s+(\w+)(\s*(?:=\s*[^;]*)?)\s*;', line)
         constructor_match = re.search(r'(\w+)\s+(\w+)\s*=\s*new', line)
@@ -294,50 +294,56 @@ class JavaParser:
                             and outerClassName in self.classes[class_name]['method_fields'][method_name]):
                         field_type = self.classes[class_name]['method_fields'][method_name][outerClassName]
                     elif outerClassName in self.classes[class_name]['fields']:
-                        field_type = self.classes[class_name]['fields'][outerClassName]
+                        field_type = self.classes[class_name]['fields'][outerClassName][1]
 
                     if 'Service' in outerClassName:
                         self.find_method_by_name(f'{self.capitalize_first_char(outerClassName)}Impl', outerMethodName)
                     elif field_type is not None:
                         lombok_field = False
-                        if field_type[1] in self.classes[class_name]['imports']:
-                            package_class_name = f'{self.classes[class_name]['imports'][field_type[1]]}.{field_type[1]}'
-                            if package_class_name in self.classes and outerMethodName in \
-                                    self.classes[package_class_name]['methods']:
-                                self.find_method_by_name(package_class_name, outerMethodName)
-                                if self.get_fields_name(outerMethodName) in self.classes[package_class_name]['fields']:
-                                    field_annotation, field_field_type, field_assign_content = \
-                                    self.classes[package_class_name]['fields'][self.get_fields_name(outerMethodName)]
-                                    self.req_classes[package_class_name]['fields'][
-                                        self.get_fields_name(outerMethodName)] = \
-                                        (field_annotation, field_field_type, field_assign_content)
+                        if field_type in self.classes[class_name]['imports']:
+                            package_class_name = f'{self.classes[class_name]['imports'][field_type]}.{field_type}'
+                        elif field_type in self.classes_package:
+                            package_class_name = f'{self.classes_package[field_type][0]}.{field_type}'
+                        if not package_class_name:
+                            print(f'{field_type} not found in {class_name}')
+                            continue
 
-                                elif self.set_fields_name(outerMethodName) in self.classes[package_class_name][
-                                    'fields']:
-                                    field_annotation, field_field_type, field_assign_content = \
-                                    self.classes[package_class_name]['fields'][self.set_fields_name(outerMethodName)]
-                                    self.req_classes[package_class_name]['fields'][
-                                        self.set_fields_name(outerMethodName)] = \
-                                        (field_annotation, field_field_type, field_assign_content)
+                        if package_class_name in self.classes and outerMethodName in \
+                                self.classes[package_class_name]['methods']:
+                            self.find_method_by_name(package_class_name, outerMethodName)
+                            if self.get_fields_name(outerMethodName) in self.classes[package_class_name]['fields']:
+                                field_annotation, field_field_type, field_assign_content = \
+                                self.classes[package_class_name]['fields'][self.get_fields_name(outerMethodName)]
+                                self.req_classes[package_class_name]['fields'][
+                                    self.get_fields_name(outerMethodName)] = \
+                                    (field_annotation, field_field_type, field_assign_content)
 
-                            elif package_class_name in self.classes and self.get_fields_name(outerMethodName) in \
-                                    self.classes[package_class_name]['fields']:
-                                field_field_type = \
-                                self.classes[package_class_name]['fields'][self.get_fields_name(outerMethodName)][1]
-                                lombok_field = True
-                            elif package_class_name.replace("Local", "Bean") in self.classes and outerMethodName in \
-                                    self.classes[package_class_name.replace("Local", "Bean")]['methods']:
-                                field_field_type = package_class_name.replace("Local", "Bean")
-                                self.find_method_by_name(field_field_type, outerMethodName)
-                            elif package_class_name.replace("Local", "") in self.classes:
-                                field_field_type = package_class_name.replace("Local", "")
-                                self.find_method_by_name(field_field_type, outerMethodName)
+                            elif self.set_fields_name(outerMethodName) in self.classes[package_class_name][
+                                'fields']:
+                                field_annotation, field_field_type, field_assign_content = \
+                                self.classes[package_class_name]['fields'][self.set_fields_name(outerMethodName)]
+                                self.req_classes[package_class_name]['fields'][
+                                    self.set_fields_name(outerMethodName)] = \
+                                    (field_annotation, field_field_type, field_assign_content)
 
-                            if lombok_field and field_field_type is not None:
-                                if field_field_type not in self.req_classes:
-                                    self.req_classes[field_field_type] = {'methods': {}, 'fields': {}}
-                                self.req_classes[field_field_type]['fields'][self.get_fields_name(outerMethodName)] = \
-                                    ([], field_field_type)
+                        elif package_class_name in self.classes and self.get_fields_name(outerMethodName) in \
+                                self.classes[package_class_name]['fields']:
+                            field_field_type = \
+                            self.classes[package_class_name]['fields'][self.get_fields_name(outerMethodName)][1]
+                            lombok_field = True
+                        elif package_class_name.replace("Local", "Bean") in self.classes and outerMethodName in \
+                                self.classes[package_class_name.replace("Local", "Bean")]['methods']:
+                            field_field_type = package_class_name.replace("Local", "Bean")
+                            self.find_method_by_name(field_field_type, outerMethodName)
+                        elif package_class_name.replace("Local", "") in self.classes:
+                            field_field_type = package_class_name.replace("Local", "")
+                            self.find_method_by_name(field_field_type, outerMethodName)
+
+                        if lombok_field and field_field_type is not None:
+                            if package_class_name not in self.req_classes:
+                                self.req_classes[package_class_name] = {'methods': {}, 'fields': {}}
+                            self.req_classes[package_class_name]['fields'][self.get_fields_name(outerMethodName)] = \
+                                ([], field_field_type, '')
                     elif self.get_package_class_name(outerClassName) in self.classes[class_name]['fields']:
                         self.find_method_by_name(
                             self.get_implementation_class(
