@@ -300,6 +300,7 @@ class JavaParser:
                         self.find_method_by_name(f'{self.capitalize_first_char(outerClassName)}Impl', outerMethodName)
                     elif field_type is not None:
                         lombok_field = False
+                        package_class_name = None
                         if field_type in self.classes[class_name]['imports']:
                             package_class_name = f'{self.classes[class_name]['imports'][field_type]}.{field_type}'
                         elif field_type in self.classes_package:
@@ -484,6 +485,8 @@ class JavaParser:
                 if annotation:
                     annotation_code = ''.join(annotation)
                     java_code += f"{annotation_code}    {field_type} {field_name}{field_assign_content};\n\n"
+                else:
+                    java_code += f"    {field_type} {field_name}{field_assign_content};\n\n"
 
             # Add methods to the Java class
             for method_name, methods in class_info['methods'].items():
@@ -502,8 +505,12 @@ class JavaParser:
         return self.classes[class_name]['content']
 
     def find_class_by_name(self, class_name):
-        for method in self.classes[class_name]['methods']:
-            self.find_method_by_name(class_name, method)
+        if class_name in self.classes_package:
+            package_class_name = f'{self.classes_package[class_name][0]}.{class_name}'
+            if package_class_name in self.req_classes:
+                return
+            if package_class_name in self.classes:
+                self.req_classes[package_class_name] = {'methods': self.classes[package_class_name]['methods'], 'fields': self.classes[package_class_name]['fields']}
 
     def get_fields_name(self, method_name):
         if method_name.startswith("get"):
