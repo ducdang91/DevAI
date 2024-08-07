@@ -21,8 +21,8 @@ def extractClassAndMethod(string):
 if __name__ == '__main__':
     mySourceCode = JavaParser()
     # parser.parse_file('C:/Users/duc.dangtrong/source/ASE/SpringBoot/testermatrix/src/main/java/com/asesg/aims/testermatrix/web/product/view/AddUpdateASProductAction.java')
-    # mySourceCode.parse_directory('C:/Users/duc.dangtrong/source/ASE/SpringBoot/testermatrix/src/main/java')
-    mySourceCode.parse_directory('C:/Users/duc.dangtrong/source/ASE/aims-legacy/old-aims')
+    mySourceCode.parse_directory('C:/Users/duc.dangtrong/source/ASE/SpringBoot/testermatrix/src')
+    # mySourceCode.parse_directory('C:/Users/duc.dangtrong/source/ASE/aims-legacy/old-aims')
 
     prompt = 'Update ProgramResourceJpaRepository class: add JPA query method to update programResourceStatusId. '
     remind = 'Note that you must response a class/interface with full implementation of updated/added code with no placeholder.  '
@@ -42,7 +42,7 @@ if __name__ == '__main__':
                     request += method_content
             else:
                 # print(mySourceCode.get_class_content_by_name(pair[0]))
-                mySourceCode.find_class_by_name(pair[0])
+                mySourceCode.find_class_by_name(pair[0].strip())
         request += '\n' + prompt + remind
         print(mySourceCode.get_classes_and_methods_content())
         print('Please input list of class and methods: ')
